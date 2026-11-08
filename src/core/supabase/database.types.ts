@@ -55,8 +55,11 @@ export type Database = {
           quantity?: string | null
           category?: ShoppingCategory
           household_id?: string
-          added_by?: string
+          added_by?: string | null
           is_bought?: boolean
+          bought_by?: string | null
+          bought_at?: string | null
+          created_at?: string
         }
         Update: Partial<Omit<ShoppingItem, 'id' | 'created_at'>>
         Relationships: []

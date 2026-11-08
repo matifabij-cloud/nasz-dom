@@ -18,11 +18,10 @@ export function useShoppingList() {
   const [error, setError] = useState('')
   const [lastRemoved, setLastRemoved] = useState<ShoppingItem | null>(null)
 
-  // Usunięcie czeka kilka sekund na ewentualne „Cofnij”.
-  const pending = useRef<{ item: ShoppingItem; timer: number } | null>(null)
-  const isPending = (id: string) => pending.current?.item.id === id
   // Dodane u nas, ale jeszcze niepotwierdzone przez bazę — odświeżenie listy ich nie skasuje.
   const unconfirmed = useRef(new Map<string, ShoppingItem>())
+  // Ostatnie usunięcie (do „Cofnij”): czekamy, aż baza je potwierdzi, zanim przywrócimy.
+  const lastDelete = useRef<{ item: ShoppingItem; done: Promise<boolean>; timer: number } | null>(null)
 
   const fetchAll = useCallback(async () => {
     const { data, error } = await supabase.from('shopping_items').select('*').order('created_at')
@@ -31,37 +30,17 @@ export function useShoppingList() {
       setStatus((s) => (s === 'ready' ? s : 'error'))
       return
     }
-    const fromDb = data.filter((i) => !isPending(i.id))
-    const ids = new Set(fromDb.map((i) => i.id))
+    const ids = new Set(data.map((i) => i.id))
     const local = [...unconfirmed.current.values()].filter((i) => !ids.has(i.id))
-    setItems([...fromDb, ...local])
+    setItems([...data, ...local])
     setStatus('ready')
   }, [])
-
-  const commitPending = useCallback(() => {
-    const p = pending.current
-    if (!p) return
-    clearTimeout(p.timer)
-    pending.current = null
-    setLastRemoved(null)
-    supabase
-      .from('shopping_items')
-      .delete()
-      .eq('id', p.item.id)
-      .then(({ error }) => {
-        if (error) {
-          setError(polishError(error))
-          fetchAll()
-        }
-      })
-  }, [fetchAll])
 
   // Wczytanie + nasłuch zmian od innych osób.
   useEffect(() => {
     if (!household) return
 
     const upsert = (row: ShoppingItem) => {
-      if (isPending(row.id)) return
       setItems((list) => {
         const idx = list.findIndex((i) => i.id === row.id)
         if (idx === -1) return [...list, row]
@@ -96,22 +75,18 @@ export function useShoppingList() {
     // Telefon w tle zrywa połączenie — po powrocie do apki odświeżamy listę.
     const onVisibility = () => {
       if (document.visibilityState === 'visible') fetchAll()
-      else commitPending()
     }
     document.addEventListener('visibilitychange', onVisibility)
-    window.addEventListener('pagehide', commitPending)
     window.addEventListener('online', fetchAll)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
-      window.removeEventListener('pagehide', commitPending)
       window.removeEventListener('online', fetchAll)
       supabase.removeChannel(channel)
     }
-  }, [household, fetchAll, commitPending])
+  }, [household, fetchAll])
 
-  // Wyjście z ekranu = usunięcie od razu (bez czekania na „Cofnij”).
-  useEffect(() => () => commitPending(), [commitPending])
+  useEffect(() => () => clearTimeout(lastDelete.current?.timer), [])
 
   const add = useCallback(
     async (rawName: string) => {
@@ -166,28 +141,49 @@ export function useShoppingList() {
     [profile, fetchAll],
   )
 
+  /** Usuwa od razu z bazy; przez kilka sekund można cofnąć. */
   const remove = useCallback(
     (item: ShoppingItem) => {
-      commitPending() // poprzednie usunięcie zatwierdzamy od razu
       setError('')
+      clearTimeout(lastDelete.current?.timer)
       setItems((list) => list.filter((i) => i.id !== item.id))
-      pending.current = { item, timer: window.setTimeout(commitPending, UNDO_MS) }
+      const done = Promise.resolve(supabase.from('shopping_items').delete().eq('id', item.id)).then(({ error }) => {
+        if (error) {
+          setError(polishError(error))
+          fetchAll()
+        }
+        return !error
+      })
+      const timer = window.setTimeout(() => {
+        lastDelete.current = null
+        setLastRemoved(null)
+      }, UNDO_MS)
+      lastDelete.current = { item, done, timer }
       setLastRemoved(item)
     },
-    [commitPending],
+    [fetchAll],
   )
 
-  const undo = useCallback(() => {
-    const p = pending.current
-    if (!p) return
-    clearTimeout(p.timer)
-    pending.current = null
+  /** Przywraca ostatnio usunięty produkt (z tym samym autorem i stanem). */
+  const undo = useCallback(async () => {
+    const d = lastDelete.current
+    if (!d) return
+    clearTimeout(d.timer)
+    lastDelete.current = null
     setLastRemoved(null)
-    setItems((list) => [...list, p.item])
+    setItems((list) => [...list, d.item])
+    if (!(await d.done)) return // usunięcie się nie udało — produkt i tak jest w bazie
+    const { id, name, quantity, category, added_by, is_bought, bought_by, bought_at, created_at } = d.item
+    const { error } = await supabase
+      .from('shopping_items')
+      .insert({ id, name, quantity, category, added_by, is_bought, bought_by, bought_at, created_at })
+    if (error) {
+      setItems((list) => list.filter((i) => i.id !== id))
+      setError(polishError(error))
+    }
   }, [])
 
   const clearBought = useCallback(async () => {
-    commitPending()
     const ids = items.filter((i) => i.is_bought).map((i) => i.id)
     if (ids.length === 0) return
     setError('')
@@ -197,7 +193,7 @@ export function useShoppingList() {
       setError(polishError(error))
       fetchAll()
     }
-  }, [items, commitPending, fetchAll])
+  }, [items, fetchAll])
 
   return { items, status, error, lastRemoved, add, toggle, remove, undo, clearBought, reload: fetchAll }
 }
