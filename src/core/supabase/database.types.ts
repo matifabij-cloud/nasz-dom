@@ -50,6 +50,7 @@ export type Database = {
       shopping_items: {
         Row: ShoppingItem
         Insert: {
+          id?: string
           name: string
           quantity?: string | null
           category?: ShoppingCategory
