@@ -1,6 +1,7 @@
 import { lazy } from 'react'
 import type { AppModule } from './types'
 import { ShoppingIcon } from './shopping/ShoppingIcon'
+import { TasksIcon } from './tasks/TasksIcon'
 
 /**
  * Rejestr modułów. Kolejność = kolejność zakładek na dolnym pasku.
@@ -16,5 +17,13 @@ export const modules: AppModule[] = [
     path: '/zakupy',
     icon: ShoppingIcon,
     component: lazy(() => import('./shopping/ShoppingPage')),
+  },
+  {
+    id: 'tasks',
+    name: 'Sprawy',
+    title: 'Sprawy do załatwienia',
+    path: '/sprawy',
+    icon: TasksIcon,
+    component: lazy(() => import('./tasks/TasksPage')),
   },
 ]

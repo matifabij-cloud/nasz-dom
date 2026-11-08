@@ -34,6 +34,18 @@ export type ShoppingItem = {
   created_at: string
 }
 
+export type Task = {
+  id: string
+  household_id: string
+  title: string
+  created_by: string | null
+  taken_by: string | null
+  taken_at: string | null
+  done_by: string | null
+  done_at: string | null
+  created_at: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -64,6 +76,12 @@ export type Database = {
           created_at?: string
         }
         Update: Partial<Omit<ShoppingItem, 'id' | 'created_at'>>
+        Relationships: []
+      }
+      tasks: {
+        Row: Task
+        Insert: Partial<Task> & { title: string }
+        Update: Partial<Omit<Task, 'id' | 'created_at'>>
         Relationships: []
       }
     }

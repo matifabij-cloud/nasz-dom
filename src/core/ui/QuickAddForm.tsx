@@ -1,13 +1,18 @@
 import { useMemo, useRef, useState, type FormEvent } from 'react'
 
 type Props = {
-  onAdd: (name: string) => void
-  /** Podpowiedzi dla wpisywanego tekstu (z historii zakupów i popularnych produktów). */
-  suggest: (query: string) => string[]
+  onAdd: (text: string) => void
+  /** Tekst w pustym polu, np. „Co kupić?”. */
+  placeholder: string
+  maxLength?: number
+  /** Opcjonalne podpowiedzi dla wpisywanego tekstu. */
+  suggest?: (query: string) => string[]
 }
 
-/** Pole „Co kupić?” — Enter, „Dodaj” albo dotknięcie podpowiedzi; pole od razu gotowe na kolejny produkt. */
-export function AddItemForm({ onAdd, suggest }: Props) {
+const noSuggestions = () => [] as string[]
+
+/** Pole szybkiego dodawania — Enter, „Dodaj” albo dotknięcie podpowiedzi; pole od razu gotowe na kolejny wpis. */
+export function QuickAddForm({ onAdd, placeholder, maxLength = 100, suggest = noSuggestions }: Props) {
   const [value, setValue] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
   const matches = useMemo(() => suggest(value), [suggest, value])
@@ -30,9 +35,9 @@ export function AddItemForm({ onAdd, suggest }: Props) {
           ref={inputRef}
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          placeholder="Co kupić?"
-          aria-label="Co kupić?"
-          maxLength={100}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          maxLength={maxLength}
           autoComplete="off"
           enterKeyHint="enter"
           className="min-h-14 min-w-0 flex-1 rounded-2xl border-2 border-stone-300 bg-white px-4 text-lg outline-none focus:border-brand-600"

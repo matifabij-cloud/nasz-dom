@@ -3,8 +3,9 @@ import { useMembers } from '../../core/household/useMembers'
 import type { ShoppingItem } from '../../core/supabase/database.types'
 import { Button } from '../../core/ui/Button'
 import { ErrorMessage } from '../../core/ui/ErrorMessage'
+import { OfflineBanner } from '../../core/ui/OfflineBanner'
+import { QuickAddForm } from '../../core/ui/QuickAddForm'
 import { Spinner } from '../../core/ui/Spinner'
-import { AddItemForm } from './AddItemForm'
 import { CATEGORIES, normalize } from './categories'
 import { buildSuggestions, learnStoreOrder, matchSuggestions, MIN_TRIPS, type HistoryRow, type StoreOrder } from './history'
 import { ShoppingItemRow } from './ShoppingItemRow'
@@ -72,13 +73,8 @@ export default function ShoppingPage() {
   return (
     <div className="pb-24">
       <div className="sticky top-0 z-10 bg-stone-100 p-3 shadow-[0_6px_6px_-6px_rgba(0,0,0,0.15)]">
-        <AddItemForm onAdd={add} suggest={suggest} />
-        {offline && (
-          <p role="status" className="mt-2 rounded-xl bg-amber-100 p-3 font-medium text-amber-900">
-            Brak internetu — lista z pamięci telefonu. Zmiany wyślą się same
-            {pendingCount > 0 && <> (czeka: {pendingCount})</>}.
-          </p>
-        )}
+        <QuickAddForm onAdd={add} placeholder="Co kupić?" suggest={suggest} />
+        <OfflineBanner offline={offline} pendingCount={pendingCount} />
         {error && (
           <div className="mt-2">
             <ErrorMessage>{error}</ErrorMessage>
