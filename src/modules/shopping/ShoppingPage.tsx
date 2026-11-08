@@ -1,3 +1,5 @@
+import { ConnectionCheck } from '../../core/supabase/ConnectionCheck'
+
 export default function ShoppingPage() {
   return (
     <div className="p-4">
@@ -5,6 +7,7 @@ export default function ShoppingPage() {
         <p className="text-xl font-semibold">Tu będzie lista zakupów</p>
         <p className="mt-2 text-stone-600">Ten ekran wypełnimy w kroku 4.</p>
       </div>
+      <ConnectionCheck />
     </div>
   )
 }
