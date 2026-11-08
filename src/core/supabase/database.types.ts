@@ -29,6 +29,8 @@ export type ShoppingItem = {
   is_bought: boolean
   bought_by: string | null
   bought_at: string | null
+  /** Ustawione = wyczyszczone z listy (zostaje w historii). */
+  cleared_at: string | null
   created_at: string
 }
 

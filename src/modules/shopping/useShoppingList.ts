@@ -16,6 +16,7 @@ type Op =
   | { kind: 'insert'; item: ShoppingItem; restore?: boolean }
   | { kind: 'update'; id: string; patch: Patch }
   | { kind: 'delete'; ids: string[] }
+  | { kind: 'clear'; ids: string[]; at: string }
 
 /** Nakłada zmiany z kolejki na listę (żeby odświeżenie z bazy ich nie skasowało). */
 function applyOps(list: ShoppingItem[], ops: Op[]): ShoppingItem[] {
@@ -26,6 +27,7 @@ function applyOps(list: ShoppingItem[], ops: Op[]): ShoppingItem[] {
     } else if (op.kind === 'update') {
       out = out.map((i) => (i.id === op.id ? { ...i, ...op.patch } : i))
     } else {
+      // delete (na stałe) i clear (do historii) — z listy znikają tak samo
       out = out.filter((i) => !op.ids.includes(i.id))
     }
   }
@@ -47,6 +49,8 @@ async function send(op: Op): Promise<'ok' | 'retry' | { rejected: string }> {
     if (res.error?.code === '23505') return 'ok' // już jest w bazie (wysłane wcześniej)
   } else if (op.kind === 'update') {
     res = await supabase.from('shopping_items').update(op.patch).eq('id', op.id)
+  } else if (op.kind === 'clear') {
+    res = await supabase.from('shopping_items').update({ cleared_at: op.at }).in('id', op.ids)
   } else {
     res = await supabase.from('shopping_items').delete().in('id', op.ids)
   }
@@ -92,7 +96,7 @@ export function useShoppingList() {
   }, [outboxKey])
 
   const fetchAll = useCallback(async () => {
-    const { data, error } = await supabase.from('shopping_items').select('*').order('created_at')
+    const { data, error } = await supabase.from('shopping_items').select('*').is('cleared_at', null).order('created_at')
     if (error) {
       if (isRetryable(error)) setOffline(true)
       // Zostawiamy to, co już widać (np. listę z pamięci telefonu).
@@ -149,6 +153,11 @@ export function useShoppingList() {
     if (!household) return
 
     const upsert = (row: ShoppingItem) => {
+      if (row.cleared_at) {
+        // Wyczyszczone przez kogoś innego — znika z listy (zostaje w historii).
+        setItems((list) => list.filter((i) => i.id !== row.id))
+        return
+      }
       setItems((list) => {
         const idx = list.findIndex((i) => i.id === row.id)
         const next = idx === -1 ? [...list, row] : list.map((i) => (i.id === row.id ? row : i))
@@ -219,6 +228,7 @@ export function useShoppingList() {
           is_bought: false,
           bought_by: null,
           bought_at: null,
+          cleared_at: null,
           created_at: new Date().toISOString(),
         },
       })
@@ -279,7 +289,7 @@ export function useShoppingList() {
 
   const clearBought = useCallback(() => {
     const ids = items.filter((i) => i.is_bought).map((i) => i.id)
-    if (ids.length > 0) enqueue({ kind: 'delete', ids })
+    if (ids.length > 0) enqueue({ kind: 'clear', ids, at: new Date().toISOString() })
   }, [items, enqueue])
 
   return {
