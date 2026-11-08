@@ -4,14 +4,14 @@ export type ShoppingCategory =
   | 'warzywa' | 'pieczywo' | 'nabial' | 'mieso' | 'mrozonki'
   | 'suche' | 'napoje' | 'chemia' | 'inne'
 
-export interface Household {
+export type Household = {
   id: string
   name: string
   invite_code: string
   created_at: string
 }
 
-export interface Profile {
+export type Profile = {
   id: string
   household_id: string | null
   display_name: string
@@ -19,7 +19,7 @@ export interface Profile {
   created_at: string
 }
 
-export interface ShoppingItem {
+export type ShoppingItem = {
   id: string
   household_id: string
   name: string
@@ -37,13 +37,13 @@ export type Database = {
     Tables: {
       households: {
         Row: Household
-        Insert: never
+        Insert: { name: string; invite_code: string }
         Update: { name?: string }
         Relationships: []
       }
       profiles: {
         Row: Profile
-        Insert: never
+        Insert: { id: string; display_name: string }
         Update: { display_name?: string; color?: string }
         Relationships: []
       }
