@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { clearAppData, readJSON, writeJSON } from '../storage'
 import { supabase } from '../supabase/client'
 import type { Household, Profile } from '../supabase/database.types'
 import { AuthContext, type AuthState } from './authContext'
@@ -34,15 +35,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const load = useCallback(async () => {
     if (!userId) return
-    const failed = { userId, ok: false, profile: null, household: null }
+    const cacheKey = `auth:${userId}`
+    // Bez internetu: używamy ostatnio zapamiętanego profilu i domu.
+    const fail = () => {
+      const cached = readJSON<{ profile: Profile; household: Household | null }>(cacheKey)
+      setLoaded(cached ? { userId, ok: true, ...cached } : { userId, ok: false, profile: null, household: null })
+    }
     const p = await supabase.from('profiles').select('*').eq('id', userId).single()
-    if (p.error) return setLoaded(failed)
+    if (p.error) return fail()
     let household: Household | null = null
     if (p.data.household_id) {
       const h = await supabase.from('households').select('*').eq('id', p.data.household_id).single()
-      if (h.error) return setLoaded(failed)
+      if (h.error) return fail()
       household = h.data
     }
+    writeJSON(cacheKey, { profile: p.data, household })
     setLoaded({ userId, ok: true, profile: p.data, household })
   }, [userId])
 
@@ -50,10 +57,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect
     load()
+    // Po powrocie internetu odśwież dane (mogły być z pamięci telefonu).
+    window.addEventListener('online', load)
+    return () => window.removeEventListener('online', load)
   }, [load])
 
   const signOut = useCallback(async () => {
     // 'local' = wyloguj tylko ten telefon, nie wszystkie urządzenia tej osoby.
+    clearAppData()
     await supabase.auth.signOut({ scope: 'local' })
   }, [])
 

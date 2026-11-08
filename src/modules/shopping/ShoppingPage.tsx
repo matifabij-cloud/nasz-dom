@@ -18,7 +18,8 @@ function compareItems(a: ShoppingItem, b: ShoppingItem) {
 }
 
 export default function ShoppingPage() {
-  const { items, status, error, lastRemoved, add, toggle, remove, undo, clearBought, reload } = useShoppingList()
+  const { items, status, error, offline, pendingCount, lastRemoved, add, toggle, remove, undo, clearBought, reload } =
+    useShoppingList()
   const members = useMembers()
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
 
@@ -40,6 +41,12 @@ export default function ShoppingPage() {
     <div className="pb-24">
       <div className="sticky top-0 z-10 bg-stone-100 p-3 shadow-[0_6px_6px_-6px_rgba(0,0,0,0.15)]">
         <AddItemForm onAdd={add} />
+        {offline && (
+          <p role="status" className="mt-2 rounded-xl bg-amber-100 p-3 font-medium text-amber-900">
+            Brak internetu — lista z pamięci telefonu. Zmiany wyślą się same
+            {pendingCount > 0 && <> (czeka: {pendingCount})</>}.
+          </p>
+        )}
         {error && (
           <div className="mt-2">
             <ErrorMessage>{error}</ErrorMessage>
