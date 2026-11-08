@@ -21,6 +21,8 @@ export function useShoppingList() {
   // Usunięcie czeka kilka sekund na ewentualne „Cofnij”.
   const pending = useRef<{ item: ShoppingItem; timer: number } | null>(null)
   const isPending = (id: string) => pending.current?.item.id === id
+  // Dodane u nas, ale jeszcze niepotwierdzone przez bazę — odświeżenie listy ich nie skasuje.
+  const unconfirmed = useRef(new Map<string, ShoppingItem>())
 
   const fetchAll = useCallback(async () => {
     const { data, error } = await supabase.from('shopping_items').select('*').order('created_at')
@@ -29,7 +31,10 @@ export function useShoppingList() {
       setStatus((s) => (s === 'ready' ? s : 'error'))
       return
     }
-    setItems(data.filter((i) => !isPending(i.id)))
+    const fromDb = data.filter((i) => !isPending(i.id))
+    const ids = new Set(fromDb.map((i) => i.id))
+    const local = [...unconfirmed.current.values()].filter((i) => !ids.has(i.id))
+    setItems([...fromDb, ...local])
     setStatus('ready')
   }, [])
 
@@ -94,10 +99,12 @@ export function useShoppingList() {
       else commitPending()
     }
     document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', commitPending)
     window.addEventListener('online', fetchAll)
 
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', commitPending)
       window.removeEventListener('online', fetchAll)
       supabase.removeChannel(channel)
     }
@@ -125,10 +132,12 @@ export function useShoppingList() {
         bought_at: null,
         created_at: new Date().toISOString(),
       }
+      unconfirmed.current.set(item.id, item)
       setItems((list) => [...list, item])
       const { error } = await supabase
         .from('shopping_items')
         .insert({ id: item.id, name: item.name, category: item.category })
+      unconfirmed.current.delete(item.id)
       if (error) {
         setItems((list) => list.filter((i) => i.id !== item.id))
         setError(polishError(error))

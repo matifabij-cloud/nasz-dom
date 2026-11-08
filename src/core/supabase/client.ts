@@ -11,6 +11,12 @@ export const supabase = createClient<Database>(
   url || 'http://localhost:54321',
   anonKey || 'brak-klucza',
   {
+    global: {
+      // Zapisy (dodanie, odhaczenie, usunięcie) mają dojść do bazy nawet wtedy,
+      // gdy ktoś od razu zamknie apkę — przeglądarka dokończy je w tle.
+      fetch: (input, init) =>
+        fetch(input, init?.method && init.method !== 'GET' ? { ...init, keepalive: true } : init),
+    },
     auth: {
       // Sesja zapamiętana na stałe i odświeżana w tle — bez ponownego logowania.
       persistSession: true,
