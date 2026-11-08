@@ -35,7 +35,7 @@ export default function ShoppingPage() {
     useShoppingList()
   const members = useMembers()
   const memberById = useMemo(() => new Map(members.map((m) => [m.id, m])), [members])
-  const history = useShoppingHistory()
+  const { history, remember } = useShoppingHistory()
 
   // Historia + to, co jest teraz na liście (bieżące zakupy też uczą).
   const allRows = useMemo<HistoryRow[]>(() => {
@@ -64,7 +64,9 @@ export default function ShoppingPage() {
   const toBuyCount = items.length - boughtCount
 
   function confirmClear() {
-    if (window.confirm(`Wyczyścić z listy kupione produkty (${boughtCount})?`)) clearBought()
+    if (!window.confirm(`Wyczyścić z listy kupione produkty (${boughtCount})?`)) return
+    remember(items.filter((i) => i.is_bought)) // kupione zostają w historii — apka się z nich uczy
+    clearBought()
   }
 
   return (

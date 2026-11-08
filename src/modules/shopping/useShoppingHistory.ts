@@ -29,7 +29,24 @@ export function useShoppingHistory() {
   useEffect(() => {
     // oxlint-disable-next-line react/set-state-in-effect -- pobranie z bazy; stan ustawia się po odpowiedzi
     refresh()
+    // Po powrocie do apki — zakupy innych osób też uczą.
+    const onVisible = () => document.visibilityState === 'visible' && refresh()
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [refresh])
 
-  return history
+  /** Dopisuje produkty do historii od razu (np. przy „Wyczyść kupione”), bez czekania na bazę. */
+  const remember = useCallback(
+    (rows: HistoryRow[]) => {
+      setHistory((prev) => {
+        const ids = new Set(prev.map((h) => h.id))
+        const next = [...rows.filter((r) => !ids.has(r.id)), ...prev]
+        writeJSON(cacheKey, next)
+        return next
+      })
+    },
+    [cacheKey],
+  )
+
+  return { history, remember }
 }

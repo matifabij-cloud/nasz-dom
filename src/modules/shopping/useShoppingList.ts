@@ -34,25 +34,41 @@ function applyOps(list: ShoppingItem[], ops: Op[]): ShoppingItem[] {
   return out
 }
 
-/** Wysyła jedną zmianę. 'retry' = brak internetu, spróbujemy później. */
-async function send(op: Op): Promise<'ok' | 'retry' | { rejected: string }> {
+/** Kilka dodań albo usunięć z rzędu wysyłamy jednym zapytaniem. */
+function takeBatch(queue: Op[]): Op[] {
+  const first = queue[0]
+  if ((first.kind !== 'insert' || first.restore) && first.kind !== 'delete') return [first]
+  const batch: Op[] = [first]
+  for (const op of queue.slice(1, 50)) {
+    const same = first.kind === 'insert' ? op.kind === 'insert' && !op.restore : op.kind === 'delete'
+    if (!same) break
+    batch.push(op)
+  }
+  return batch
+}
+
+/** Wysyła zmiany. 'retry' = brak internetu, spróbujemy później. */
+async function send(batch: Op[]): Promise<'ok' | 'retry' | { rejected: string }> {
+  const op = batch[0]
   let res
   if (op.kind === 'insert') {
-    const { id, name, quantity, category, added_by, is_bought, bought_by, bought_at, created_at } = op.item
-    res = await supabase
-      .from('shopping_items')
-      .insert(
-        op.restore
-          ? { id, name, quantity, category, added_by, is_bought, bought_by, bought_at, created_at }
-          : { id, name, category },
-      )
-    if (res.error?.code === '23505') return 'ok' // już jest w bazie (wysłane wcześniej)
+    const rows = batch.map((o) => {
+      const { id, name, quantity, category, added_by, is_bought, bought_by, bought_at, created_at } = (
+        o as Extract<Op, { kind: 'insert' }>
+      ).item
+      return op.restore
+        ? { id, name, quantity, category, added_by, is_bought, bought_by, bought_at, created_at }
+        : { id, name, category }
+    })
+    // Ponowne wysłanie (np. odpowiedź zginęła przy słabym zasięgu) — już jest w bazie, pomijamy.
+    res = await supabase.from('shopping_items').upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
   } else if (op.kind === 'update') {
     res = await supabase.from('shopping_items').update(op.patch).eq('id', op.id)
   } else if (op.kind === 'clear') {
     res = await supabase.from('shopping_items').update({ cleared_at: op.at }).in('id', op.ids)
   } else {
-    res = await supabase.from('shopping_items').delete().in('id', op.ids)
+    const ids = batch.flatMap((o) => (o as Extract<Op, { kind: 'delete' }>).ids)
+    res = await supabase.from('shopping_items').delete().in('id', ids)
   }
   if (!res.error) return 'ok'
   if (isRetryable(res.error, res.status)) return 'retry'
@@ -73,7 +89,7 @@ export function useShoppingList() {
 
   const [initialOutbox] = useState(() => readJSON<Op[]>(outboxKey) ?? [])
   const outbox = useRef<Op[]>(initialOutbox)
-  const inFlight = useRef<Op | null>(null)
+  const inFlight = useRef<Op[] | null>(null)
   const flushing = useRef(false)
 
   const [cachedItems] = useState(() => readJSON<ShoppingItem[]>(itemsKey))
@@ -114,15 +130,15 @@ export function useShoppingList() {
     let rejected = false
     try {
       while (outbox.current.length > 0) {
-        const op = outbox.current[0]
-        inFlight.current = op
-        const result = await send(op)
+        const batch = takeBatch(outbox.current)
+        inFlight.current = batch
+        const result = await send(batch)
         inFlight.current = null
         if (result === 'retry') {
           setOffline(true)
           return
         }
-        outbox.current = outbox.current.filter((o) => o !== op)
+        outbox.current = outbox.current.filter((o) => !batch.includes(o))
         saveOutbox()
         if (result !== 'ok') {
           rejected = true
@@ -276,14 +292,17 @@ export function useShoppingList() {
     clearTimeout(d.timer)
     lastDelete.current = null
     setLastRemoved(null)
-    const queued = outbox.current.includes(d.op) && inFlight.current !== d.op
+    const queued = outbox.current.includes(d.op) && !inFlight.current?.includes(d.op)
     if (queued) {
       // Usunięcie jeszcze nie wyszło (np. brak internetu) — po prostu je anulujemy.
       outbox.current = outbox.current.filter((o) => o !== d.op)
       saveOutbox()
       setItems((list) => [...list, d.item])
     } else {
-      enqueue({ kind: 'insert', item: d.item, restore: true })
+      // Usunięcie już poszło do bazy — wstawiamy produkt ponownie, pod NOWYM id.
+      // Dzięki temu spóźnione powiadomienie o usunięciu (Realtime nie gwarantuje kolejności)
+      // nie skasuje przywróconego produktu z ekranów.
+      enqueue({ kind: 'insert', item: { ...d.item, id: crypto.randomUUID() }, restore: true })
     }
   }, [enqueue, saveOutbox])
 
